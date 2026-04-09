@@ -35,6 +35,9 @@ PUSH_TARGET="/sdcard/Pictures/Push"
 CONFIG_FILE="$HOME/.android_scrcpy_ip"
 PORT="5555"
 
+# Estado de conexión
+USB_WAS_CONNECTED=false
+
 # Colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -51,34 +54,26 @@ show_header() {
 }
 
 check_adb() {
-    if ! adb get-state 1>/dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  ADB ya está corriendo o no responde${NC}"
-        echo ""
-        echo -e "  ${GREEN}[1]${NC} Matar ADB y reiniciar (recomendado)"
-        echo -e "  ${BLUE}[2]${NC} Intentar usar ADB existente"
-        echo ""
-        echo -e "${YELLOW}Seleccioná (1/2):${NC}"
-        read -n 1 choice
-        echo ""
-        
-        case "$choice" in
-            1)
-                echo -e "${YELLOW}🔄 Matando ADB...${NC}"
-                adb kill-server 2>/dev/null
-                sleep 2
-                adb start-server
-                ;;
-            2)
-                echo -e "${BLUE}🔄 Usando ADB existente...${NC}"
-                ;;
-            *)
-                echo -e "${YELLOW}🔄 Opción por defecto: matar ADB...${NC}"
-                adb kill-server 2>/dev/null
-                sleep 2
-                adb start-server
-                ;;
-        esac
+    # Intentar usar ADB existente
+    if adb get-state 1>/dev/null 2>&1; then
+        echo -e "${GREEN}✅ ADB funcionando${NC}"
+        return 0
     fi
+    
+    # Si falla, matar y reiniciar automáticamente
+    echo -e "${YELLOW}🔄 ADB no responde, reiniciando...${NC}"
+    adb kill-server 2>/dev/null
+    sleep 2
+    adb start-server
+    
+    # Verificar si funcionó
+    if adb get-state 1>/dev/null 2>&1; then
+        echo -e "${GREEN}✅ ADB reiniciado${NC}"
+        return 0
+    fi
+    
+    echo -e "${RED}❌ ADB no disponible${NC}"
+    return 1
 }
 
 store_brightness() {
@@ -98,16 +93,22 @@ set_low_brightness() {
 
 restore_brightness() {
     if [ -n "$ORIGINAL_BRIGHTNESS" ]; then
-        adb shell settings put system screen_brightness "$ORIGINAL_BRIGHTNESS"
+        adb shell settings put system screen_brightness "$ORIGINAL_BRIGHTNESS" 2>/dev/null
         echo -e "${YELLOW}🔅 Brillo restaurado: $ORIGINAL_BRIGHTNESS${NC}"
     fi
     if [ -n "$ORIGINAL_BRIGHTNESS_MODE" ]; then
-        adb shell settings put system screen_brightness_mode "$ORIGINAL_BRIGHTNESS_MODE"
+        adb shell settings put system screen_brightness_mode "$ORIGINAL_BRIGHTNESS_MODE" 2>/dev/null
     fi
 }
 
 cleanup_on_exit() {
     restore_brightness
+    # Si había USB conectado antes de WiFi, restaurarlo
+    if [ "$USB_WAS_CONNECTED" = true ]; then
+        echo -e "${BLUE}🔌 Restaurando conexión USB...${NC}"
+        adb connect 127.0.0.1:$PORT 2>/dev/null
+        sleep 1
+    fi
 }
 
 # Menú de selección de conexión con timeout
@@ -142,6 +143,9 @@ launch_scrcpy_usb() {
     echo -e "${GREEN}✅ Lanzando scrcpy por USB...${NC}"
     echo -e "${BLUE}📸 Auto-refresh de medios activado${NC}"
     echo ""
+    
+    # Verificar ADB antes de continuar
+    check_adb || return 1
     
     # Aplicar brillo bajo antes de iniciar
     set_low_brightness
@@ -270,6 +274,13 @@ wait_for_usb() {
 }
 
 setup_wifi_from_usb() {
+    # Verificar si hay USB conectado antes de establecer WiFi
+    USB_DEVICE=$(adb devices | grep -v "List" | grep "device$" | grep -v ":" | grep "usb" | head -1)
+    if [ -n "$USB_DEVICE" ]; then
+        USB_WAS_CONNECTED=true
+        echo -e "${BLUE}🔌 USB detectado, se restaurará al terminar${NC}"
+    fi
+    
     NEW_IP=$(get_ip_from_usb)
     
     if [ -z "$NEW_IP" ]; then
@@ -287,6 +298,14 @@ setup_wifi_from_usb() {
     if fresh_connect "$NEW_IP"; then
         echo "$NEW_IP" > "$CONFIG_FILE"
         echo -e "${GREEN}💾 IP guardada${NC}"
+        
+        # Desconectar USB para evitar "more than one device"
+        if [ "$USB_WAS_CONNECTED" = true ]; then
+            echo -e "${BLUE}🔌 Desconectando USB...${NC}"
+            adb disconnect 2>/dev/null
+            sleep 1
+        fi
+        
         launch_scrcpy
         return 0
     else
@@ -301,9 +320,6 @@ setup_wifi_from_usb() {
 # Guardar brillo original y configurar trap para cleanup
 store_brightness
 trap cleanup_on_exit EXIT
-
-# Verificar ADB
-check_adb
 
 # Mostrar menú de selección al inicio
 select_connection_mode
