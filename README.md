@@ -44,8 +44,8 @@ cd ~/scrcpy-mac-app
 3. Elegir WiFi o USB
 4. Si es WiFi, el script obtiene la IP y configura TCPIP
 5. Usar scrcpy normalmente
-6. **CERRAR scrcpy antes de desconectar el cable**
-7._LISTO El brillo se restaura automáticamente
+6. **CERRAR scrcpy antes de desconectar el cable** (ctrl+c)
+7. LISTO El brillo se restaura automáticamente
 
 ## Solución de problemas
 
@@ -55,7 +55,7 @@ Otro programa está usando ADB (Android Studio, etc.). Cerralo o elegí "Matar A
 
 ### El brillo no baja
 
-某些 dispositivos necesitan permisos. Probá:
+Los dispositivos necesitan permisos. Probá:
 ```bash
 adb shell settings put system screen_brightness_mode 0
 adb shell settings put system screen_brightness 10
