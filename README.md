@@ -2,25 +2,15 @@
 
 Launcher de scrcpy para macOS con gestión de brillo bajo y auto-refresh de medios.
 
-## Opciones de uso
-
-### Opción 1: Descargar el .app (recomendado)
-
-```bash
-# Descargar el release desde GitHub
-# Ir a: https://github.com/tuuser/scrcpy-mac-app/releases
-# Descargar Android.app.zip y descomprimir en /Applications
-```
-
-### Opción 2: Ejecutar el script manualmente
+## Uso
 
 ```bash
 # Clonar el repo
-git clone https://github.com/tuuser/scrcpy-mac-app.git ~/scrcpy-mac-app
+git clone https://github.com/Chugeno/scrcpy-mac-app.git ~/scrcpy-mac-app
 
 # Ejecutar
 cd ~/scrcpy-mac-app
-./android-wifo.sh
+./android-wifi.sh
 ```
 
 ## Características
@@ -29,29 +19,30 @@ cd ~/scrcpy-mac-app
 - ✅ Brillo bajo automático (~4%) al conectar
 - ✅ Brillo restaurado al salir
 - ✅ Auto-refresh de galería cuando subís archivos arrastrando
-- ✅ Detecta si ADB está corriendo y pregunta qué hacer
+- ✅ Detecta si ADB está corriendo y reinicia automáticamente
+- ✅ Desconexión USB automática al usar WiFi (evita conflictos)
 
 ## Requisitos
 
 - [scrcpy](https://github.com/Genymobile/scrcpy) instalado (`brew install scrcpy`)
-- ADB-enabled phone
-- Teléfono en la misma red WiFi
+- Teléfono con depuración USB activada
+- Teléfono en la misma red WiFi que la Mac
 
 ## Uso
 
 1. Conectar el teléfono por USB (la primera vez)
-2. Ejecutar `android-wifi.sh`
-3. Elegir WiFi o USB
-4. Si es WiFi, el script obtiene la IP y configura TCPIP
+2. Ejecutar `./android-wifi.sh`
+3. Elegir WiFi (default) o USB
+4. Si es WiFi, el script obtiene la IP automáticamente
 5. Usar scrcpy normalmente
-6. **CERRAR scrcpy antes de desconectar el cable** (ctrl+c)
-7. LISTO El brillo se restaura automáticamente
+6. **CERRAR scrcpy antes de desconectar** (Ctrl+C)
+7. El brillo se restaura automáticamente
 
 ## Solución de problemas
 
 ### "ADB server didn't ACK"
 
-Otro programa está usando ADB (Android Studio, etc.). Cerralo o elegí "Matar ADB" en el menú.
+Otro programa está usando ADB (Android Studio, etc.). El script lo detecta y reinicia automáticamente.
 
 ### El brillo no baja
 
@@ -63,7 +54,7 @@ adb shell settings put system screen_brightness 10
 
 ### La pantalla quedó apagada
 
-Always cerrá scrcpy (Ctrl+C) antes de desconectar. Si quedó apagada:
+Siempre cerrá scrcpy (Ctrl+C) antes de desconectar. Si quedó apagada:
 ```bash
 adb shell input keyevent 26
 ```
