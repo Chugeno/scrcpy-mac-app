@@ -1,17 +1,24 @@
 # scrcpy-mac-app
 
-Launcher de scrcpy para macOS con gestión de brillo bajo y auto-refresh de medios.
+⚡️ **Tu Android en la Mac** — Experiencia similar a Continuity para Android
 
-## Uso
+Arrastrá archivos, usá tu teclado y mouse, copiá y pegá entre dispositivos, y más.
 
-```bash
-# Clonar el repo
-git clone https://github.com/Chugeno/scrcpy-mac-app.git ~/scrcpy-mac-app
+🎯 **Descargar**: [Latest Release](https://github.com/Chugeno/scrcpy-mac-app/releases/latest)
 
-# Ejecutar
-cd ~/scrcpy-mac-app
-./android-wifi.sh
-```
+---
+
+Este script configura y ejecuta scrcpy con opciones optimizadas para que no tengas que acordarte de nada.
+
+## Configuraciones por defecto
+
+| Config | Valor | Descripción |
+|--------|-------|-------------|
+| Bitrate | 2M | Balance calidad/lag por WiFi |
+| Resolución | 800px | Rendimiento óptimo |
+| Brillo | ~4% | Bajo al conectar, restaurado al salir |
+| Teclado | uhid | Soporte completo de teclado físico |
+| Stay awake | true | Teléfono no duerme mientras scrcpy corre |
 
 ## Características
 
@@ -29,6 +36,12 @@ cd ~/scrcpy-mac-app
 - Teléfono en la misma red WiFi que la Mac
 
 ## Uso
+
+```bash
+git clone https://github.com/Chugeno/scrcpy-mac-app.git ~/scrcpy-mac-app
+cd ~/scrcpy-mac-app
+./android-wifi.sh
+```
 
 1. Conectar el teléfono por USB (la primera vez)
 2. Ejecutar `./android-wifi.sh`
