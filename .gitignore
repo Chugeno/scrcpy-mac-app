@@ -8,3 +8,9 @@
 
 # Temp
 *.tmp
+
+# Android.app (se sube manualmente como release, no en commits)
+*.app/
+Android.app/
+Android.zip
+Android.app.zip
