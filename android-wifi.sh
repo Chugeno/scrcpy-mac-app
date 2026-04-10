@@ -38,6 +38,9 @@ PORT="5555"
 # Estado de conexión
 USB_WAS_CONNECTED=false
 
+# Serial del dispositivo actual (para usar adb -s)
+DEVICE_SERIAL=""
+
 # Colores
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -77,38 +80,34 @@ check_adb() {
 }
 
 store_brightness() {
-    ORIGINAL_BRIGHTNESS=$(adb shell settings get system screen_brightness 2>/dev/null | tr -d '\r')
-    ORIGINAL_BRIGHTNESS_MODE=$(adb shell settings get system screen_brightness_mode 2>/dev/null | tr -d '\r')
+    ORIGINAL_BRIGHTNESS=$(adb -s "$DEVICE_SERIAL" shell settings get system screen_brightness 2>/dev/null | tr -d '\r')
+    ORIGINAL_BRIGHTNESS_MODE=$(adb -s "$DEVICE_SERIAL" shell settings get system screen_brightness_mode 2>/dev/null | tr -d '\r')
     [ -z "$ORIGINAL_BRIGHTNESS" ] && ORIGINAL_BRIGHTNESS=128
     [ -z "$ORIGINAL_BRIGHTNESS_MODE" ] && ORIGINAL_BRIGHTNESS_MODE=1
 }
 
 set_low_brightness() {
     echo -e "${YELLOW}🔅 Aplicando brillo bajo...${NC}"
-    adb shell settings put system screen_brightness_mode 0
-    adb shell settings put system screen_brightness "$LOW_BRIGHTNESS"
-    NEW_BRIGHTNESS=$(adb shell settings get system screen_brightness | tr -d '\r')
+    adb -s "$DEVICE_SERIAL" shell settings put system screen_brightness_mode 0
+    adb -s "$DEVICE_SERIAL" shell settings put system screen_brightness "$LOW_BRIGHTNESS"
+    NEW_BRIGHTNESS=$(adb -s "$DEVICE_SERIAL" shell settings get system screen_brightness | tr -d '\r')
     echo -e "${YELLOW}🔅 Brillo: $NEW_BRIGHTNESS${NC}"
 }
 
 restore_brightness() {
-    if [ -n "$ORIGINAL_BRIGHTNESS" ]; then
-        adb shell settings put system screen_brightness "$ORIGINAL_BRIGHTNESS" 2>/dev/null
+    if [ -n "$ORIGINAL_BRIGHTNESS" ] && [ -n "$DEVICE_SERIAL" ]; then
+        adb -s "$DEVICE_SERIAL" shell settings put system screen_brightness "$ORIGINAL_BRIGHTNESS" 2>/dev/null
         echo -e "${YELLOW}🔅 Brillo restaurado: $ORIGINAL_BRIGHTNESS${NC}"
     fi
-    if [ -n "$ORIGINAL_BRIGHTNESS_MODE" ]; then
-        adb shell settings put system screen_brightness_mode "$ORIGINAL_BRIGHTNESS_MODE" 2>/dev/null
+    if [ -n "$ORIGINAL_BRIGHTNESS_MODE" ] && [ -n "$DEVICE_SERIAL" ]; then
+        adb -s "$DEVICE_SERIAL" shell settings put system screen_brightness_mode "$ORIGINAL_BRIGHTNESS_MODE" 2>/dev/null
     fi
 }
 
 cleanup_on_exit() {
     restore_brightness
-    # Si había USB conectado antes de WiFi, restaurarlo
-    if [ "$USB_WAS_CONNECTED" = true ]; then
-        echo -e "${BLUE}🔌 Restaurando conexión USB...${NC}"
-        adb connect 127.0.0.1:$PORT 2>/dev/null
-        sleep 1
-    fi
+    # No reconectamos nada - si quiere USB, que conecte el cable físico
+    # El script detectará automáticamente el modo de conexión la próxima vez
 }
 
 # Menú de selección de conexión con timeout
@@ -144,14 +143,24 @@ launch_scrcpy_usb() {
     echo -e "${BLUE}📸 Auto-refresh de medios activado${NC}"
     echo ""
     
-    # Verificar ADB antes de continuar
-    check_adb || return 1
+    # Detectar serial USB - buscar dispositivos que NO tengan ":" (son físicos, no TCPIP)
+    USB_SERIAL=$(adb devices 2>/dev/null | grep -v "List" | grep "device$" | grep -v ":" | head -1 | awk '{print $1}')
+    if [ -z "$USB_SERIAL" ]; then
+        echo -e "${RED}❌ No se detectó dispositivo USB${NC}"
+        return 1
+    fi
+    DEVICE_SERIAL="$USB_SERIAL"
+    echo -e "${BLUE}📱 Usando: $USB_SERIAL${NC}"
+    
+    # Limpiar conexiones WiFi previas para evitar "more than one device"
+    adb disconnect 127.0.0.1:$PORT 2>/dev/null
+    sleep 1
     
     # Aplicar brillo bajo antes de iniciar
     set_low_brightness
 
     # Construir comando para USB
-    CMD="scrcpy -b$BITRATE -m$MAX_SIZE --keyboard=$KEYBOARD --push-target=$PUSH_TARGET"
+    CMD="scrcpy -s $DEVICE_SERIAL -b$BITRATE -m$MAX_SIZE --keyboard=$KEYBOARD --push-target=$PUSH_TARGET"
     
     [ "$STAY_AWAKE" = true ] && CMD="$CMD --stay-awake"
     
@@ -163,7 +172,7 @@ launch_scrcpy_usb() {
         tail -f "$TMPLOG" 2>/dev/null | while IFS= read -r line; do
             if [[ "$line" == *"successfully pushed to"* ]]; then
                 echo -e "${GREEN}📸 Refrescando galería...${NC}"
-                adb shell "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${PUSH_TARGET}'" >/dev/null 2>&1
+                adb -s "$DEVICE_SERIAL" shell "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${PUSH_TARGET}'" >/dev/null 2>&1
             fi
         done
     ) &
@@ -206,7 +215,12 @@ fresh_connect() {
     RESULT=$(cat "$TMPFILE")
     rm -f "$TMPFILE"
     
-    echo "$RESULT" | grep -q "connected"
+    if echo "$RESULT" | grep -q "connected"; then
+        # Guardar el serial del dispositivo conectado por WiFi
+        DEVICE_SERIAL="${ip}:${PORT}"
+        return 0
+    fi
+    return 1
 }
 
 launch_scrcpy() {
@@ -214,11 +228,23 @@ launch_scrcpy() {
     echo -e "${BLUE}📸 Auto-refresh de medios activado${NC}"
     echo ""
     
+    # Limpiar cualquier conexión USB previa para evitar "more than one device"
+    USB_CONNECTED=$(adb devices 2>/dev/null | grep -v "List" | grep "device$" | grep -v ":" | grep "usb" | wc -l | tr -d ' ')
+    if [ "$USB_CONNECTED" -gt 0 ]; then
+        echo -e "${BLUE}🔌 Desconectando USB para evitar conflictos...${NC}"
+        # Solo desconectar USB físicos, no el WiFi que ya está en DEVICE_SERIAL
+        for dev in $(adb devices 2>/dev/null | grep -v "List" | grep "device$" | grep -v ":" | grep "usb" | awk '{print $1}'); do
+            adb -s "$dev" disconnect 2>/dev/null
+        done
+        sleep 1
+    fi
+    
     # Aplicar brillo bajo antes de iniciar
     set_low_brightness
 
     # Construir comando con opciones configurables
-    CMD="scrcpy --select-tcpip -b$BITRATE -m$MAX_SIZE --keyboard=$KEYBOARD --push-target=$PUSH_TARGET"
+    # DEVICE_SERIAL ya es la IP:5555, así que solo usamos -s (sin --select-tcpip)
+    CMD="scrcpy -s $DEVICE_SERIAL -b$BITRATE -m$MAX_SIZE --keyboard=$KEYBOARD --push-target=$PUSH_TARGET"
     
     [ "$STAY_AWAKE" = true ] && CMD="$CMD --stay-awake"
     
@@ -233,7 +259,7 @@ launch_scrcpy() {
         tail -f "$TMPLOG" 2>/dev/null | while IFS= read -r line; do
             if [[ "$line" == *"successfully pushed to"* ]]; then
                 echo -e "${GREEN}📸 Refrescando galería...${NC}"
-                adb shell "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${PUSH_TARGET}'" >/dev/null 2>&1
+                adb -s "$DEVICE_SERIAL" shell "am broadcast -a android.intent.action.MEDIA_SCANNER_SCAN_FILE -d 'file://${PUSH_TARGET}'" >/dev/null 2>&1
             fi
         done
     ) &
@@ -263,6 +289,7 @@ wait_for_usb() {
     
     while true; do
         adb start-server >/dev/null 2>&1
+        sleep 1
         USB=$(adb devices | grep -v "List" | grep "device$" | grep -v ":")
         if [ -n "$USB" ]; then
             echo -e "\n${GREEN}  ✅ ¡Dispositivo detectado!${NC}"
@@ -334,8 +361,15 @@ if [ "$CONNECTION_MODE" = "usb" ]; then
         echo ""
         
         echo -e "${YELLOW}🔍 Buscando dispositivo USB...${NC}"
-        adb kill-server >/dev/null 2>&1
-        adb start-server >/dev/null 2>&1
+        
+        # Solo reiniciar ADB si no hay dispositivos
+        USB_CHECK=$(adb devices 2>/dev/null | grep -v "List" | grep "device$" | grep -v ":")
+        if [ -z "$USB_CHECK" ]; then
+            echo -e "${YELLOW}🔄 Reiniciando ADB...${NC}"
+            adb kill-server >/dev/null 2>&1
+            adb start-server >/dev/null 2>&1
+            sleep 2
+        fi
         
         USB=$(adb devices | grep -v "List" | grep "device$" | grep -v ":")
         
